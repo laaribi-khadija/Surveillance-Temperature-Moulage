@@ -1,0 +1,105 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <HardwareSerial.h>
+
+#define ONE_WIRE_BUS 4      // Broche du DS18B20 (D4 par ex)
+#define LED_PIN 2           // LED d’alerte (D2 sur ESP32)
+#define RX_PIN 16           // RX ESP32 connecté à TX SIM800L
+#define TX_PIN 17           // TX ESP32 connecté à RX SIM800L
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+HardwareSerial sim800(1);
+
+float temperature;
+const int seuil = 40; // seuil de déclenchement alerte
+
+void setup() {
+  Serial.begin(115200);
+  sensors.begin();
+  pinMode(LED_PIN, OUTPUT);
+
+  // Initialisation SIM800L
+  sim800.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
+  delay(1000);
+  sim800.println("AT");
+  delay(1000);
+  sim800.println("AT+CMGF=1"); // mode SMS
+  delay(1000);
+}
+
+void loop() {
+  sensors.requestTemperatures();
+  temperature = sensors.getTempCByIndex(0);
+  Serial.print("Température : ");
+  Serial.println(temperature);
+
+  if (temperature > seuil) {
+    digitalWrite(LED_PIN, HIGH);
+
+    // Envoi SMS d’alerte
+    sim800.println("AT+CMGS=\"+212600000000\""); // numéro à modifier
+    delay(1000);
+    sim800.print("ALERTE : Température critique = ");
+    sim800.print(temperature);
+    sim800.println(" °C !");
+    sim800.write(26); // Ctrl+Z pour envoyer
+    delay(5000); // attendre avant prochain SMS
+  } else {
+    digitalWrite(LED_PIN, LOW);
+  }
+
+  delay(2000);
+}
+#define BLYNK_TEMPLATE_ID "YourTemplateID"
+#define BLYNK_DEVICE_NAME "ESP32_Temp"
+#define BLYNK_AUTH_TOKEN  "YourAuthToken"
+
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Identifiants WiFi
+char ssid[] = "YourSSID";
+char pass[] = "YourPassword";
+
+#define ONE_WIRE_BUS 4
+#define LED_PIN 2
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+float temperature;
+const int seuil = 40;
+
+void setup() {
+  Serial.begin(115200);
+  sensors.begin();
+  pinMode(LED_PIN, OUTPUT);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+}
+
+void loop() {
+  Blynk.run();
+
+  sensors.requestTemperatures();
+  temperature = sensors.getTempCByIndex(0);
+
+  // Envoi au Dashboard
+  Blynk.virtualWrite(V0, temperature); // Widget affichage température
+  Blynk.virtualWrite(V2, temperature); // Widget graphique
+
+  // Gestion LED d’alerte
+  if (temperature > seuil) {
+    digitalWrite(LED_PIN, HIGH);
+    Blynk.virtualWrite(V1, 1); // LED virtuelle ON
+  } else {
+    digitalWrite(LED_PIN, LOW);
+    Blynk.virtualWrite(V1, 0); // LED virtuelle OFF
+  }
+
+  delay(2000);
+}
